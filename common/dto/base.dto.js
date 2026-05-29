@@ -10,4 +10,4 @@ class BaseDto{
         return {data:value,error:null};
     }
 }
-module.exports = BaseDto;
+export default BaseDto;
