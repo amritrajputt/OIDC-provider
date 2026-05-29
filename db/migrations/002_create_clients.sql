@@ -1,5 +1,5 @@
 CREATE TABLE clients(
-    id Primary key default gen_random_uuid(),
+    id UUID Primary key default gen_random_uuid(),
     client_id varchar(100) unique not null,
     client_secret varchar(100) not null,
     redirect_uri text not null,
