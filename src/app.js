@@ -3,6 +3,7 @@ import authRouter from "./routes/auth.js";
 import clientRouter from "./routes/clients.js";
 import oidcRouter from "./routes/oidc.js";
 import session from 'express-session'
+import discoveryRoutes from './routes/discovery.js';
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(session({
 app.use("/api/auth", authRouter);
 app.use("/api/clients", clientRouter);
 app.use("/api/oidc", oidcRouter);
+app.use('/', discoveryRoutes);
 
 app.get("/", (req, res) => {
     res.json({ message: "OIDC Provider Server is running" });

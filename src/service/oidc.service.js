@@ -49,22 +49,23 @@ const tokenService = async (req, res) => {
     if (!isSecretValid) {
         throw ApiError.badRequest("invalid_client")
     }
-    const codeRequest = await pool.query("select * from autorization_codes where code = $1", [code])
+    const updateResult = await pool.query(
+        "UPDATE autorization_codes SET is_used = true WHERE code = $1 AND is_used = false RETURNING *",
+        [code]
+    );
 
-    if (codeRequest.rows.length == 0) {
-        throw ApiError.badRequest("invalid_code")
+    if (updateResult.rows.length === 0) {
+        throw ApiError.badRequest("invalid_grant");
     }
-    if (codeRequest.rows[0].is_used) {
-        throw ApiError.badRequest("invalid_code")
+    const codeRecord = updateResult.rows[0];
+
+    if (codeRecord.expires_at < new Date()) {
+        throw ApiError.badRequest("invalid_grant");
     }
-    if (codeRequest.rows[0].expires_at < new Date()) {
-        throw ApiError.badRequest("invalid_code")
+    if (codeRecord.client_id !== clientRequest.rows[0].id) {
+        throw ApiError.badRequest("invalid_client");
     }
-    if (codeRequest.rows[0].client_id !== clientRequest.rows[0].id) {
-        throw ApiError.badRequest("invalid_client")
-    }
-    await pool.query("UPDATE autorization_codes SET is_used = true WHERE code = $1", [code])
-    const userRequest = await pool.query("SELECT * FROM users WHERE id = $1", [codeRequest.rows[0].user_id])
+    const userRequest = await pool.query("SELECT * FROM users WHERE id = $1", [codeRecord.user_id]);
     const user = userRequest.rows[0]
 
 
