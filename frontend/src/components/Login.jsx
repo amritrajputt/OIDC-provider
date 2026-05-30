@@ -6,6 +6,11 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleAutofillDemo = () => {
+    setEmail('demo@example.com');
+    setPassword('password123');
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -43,12 +48,9 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-radial from-neutral-900 via-black to-neutral-950 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-neutral-950 px-4">
       <div className="relative w-full max-w-md">
-        <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-600/30 rounded-full blur-2xl pointer-events-none"></div>
-        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-indigo-600/30 rounded-full blur-2xl pointer-events-none"></div>
-
-        <div className="w-full bg-neutral-900/60 backdrop-blur-xl border border-neutral-800 rounded-3xl p-8 shadow-2xl">
+        <div className="w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl">
           <div className="flex flex-col items-center mb-8">
             <div className="w-16 h-16 bg-gradient-to-tr from-purple-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-900/50 mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-white">
@@ -57,6 +59,17 @@ export default function Login() {
             </div>
             <h1 className="text-3xl font-heading font-bold text-white tracking-tight">OIDC Sign In</h1>
             <p className="text-neutral-400 text-sm mt-1">Sign in to authorize your application</p>
+          </div>
+
+          <div className="mb-6 bg-purple-950/20 border border-purple-900/40 rounded-2xl p-4 text-center">
+            <p className="text-xs text-purple-300 mb-2 font-medium">Quick Demo</p>
+            <button
+              type="button"
+              onClick={handleAutofillDemo}
+              className="inline-flex items-center justify-center bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 hover:text-purple-200 border border-purple-500/30 font-semibold py-2 px-4 rounded-xl text-xs transition cursor-pointer"
+            >
+              Autofill Demo Credentials
+            </button>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">

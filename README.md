@@ -24,6 +24,10 @@ This project implements standard OAuth 2.0 and OIDC specifications, featuring as
 * **JWKS Endpoint**: `/jwks.json` and `/.well-known/jwks.json` publish the server's active RSA Public Key.
 * **Core Flow Endpoints**: `/api/oidc/authorize`, `/api/oidc/token`, and `/api/oidc/userinfo`.
 
+### 🖥️ 4. Built-in End-to-End Demo Client App
+* **Interactive Demo**: `/demo-client` hosts a self-contained web app to test the login, consent, and token exchanges directly from your browser.
+* **Auto-Seeding**: Registers standard test client (`demo-client-id`) and test user credentials (`demo@example.com` / `password123`) on startup.
+
 ---
 
 ## 🗺️ Flow Architecture
@@ -114,10 +118,11 @@ oidc-provider/
 │   ├── dto/
 │   │   └── dto.auth.js         # Input validation schemas
 │   ├── model/
-│   │   └── db.js               # PostgreSQL connection pool
+│   │   └── db.js               # PostgreSQL connection pool (with auto-seeding)
 │   ├── routes/
 │   │   ├── auth.js
 │   │   ├── clients.js
+│   │   ├── demoClient.js       # Demo Client Router (/demo-client)
 │   │   ├── discovery.js        # Discovery & JWKS routes
 │   │   └── oidc.js
 │   ├── service/
@@ -193,4 +198,22 @@ pnpm run dev
 The React frontend will start on `http://localhost:5174/` (or `5173`).
 
 ---
+
+## 🧪 Testing with the Built-in OIDC Demo Client
+
+The server includes a pre-packaged OIDC Demo Client App to easily test the Identity Provider flow end-to-end.
+
+1. Start both the backend and frontend servers as described above.
+2. Open your browser and navigate to **`http://localhost:3000/demo-client`**.
+3. Click the **Login using Custom OIDC** button.
+4. You will be redirected to the React frontend Sign In page (`http://localhost:5173/login`).
+5. Log in with the pre-seeded credentials:
+   - **Email**: `demo@example.com`
+   - **Password**: `password123`
+6. You will then see the Consent Screen requesting the `openid` scope. Click **Continue**.
+7. The server will redirect you back to the Demo Client callback page (`http://localhost:3000/demo-client/callback`), showing:
+   - **User Profile Information** (retrieved from the `/api/oidc/userinfo` endpoint using the Access Token)
+   - **ID Token** (signed RS256 JWT containing user identity claims)
+   - **Access Token** (signed bearer token)
+   - **Verified OAuth state** parameter
 

@@ -45,21 +45,16 @@ export default function Consent() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-radial from-neutral-900 via-black to-neutral-950 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-neutral-950 px-4">
       <div className="relative w-full max-w-lg">
-     
-        <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-600/30 rounded-full blur-2xl pointer-events-none"></div>
-        <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-indigo-600/30 rounded-full blur-2xl pointer-events-none"></div>
-
-       
-        <div className="w-full bg-neutral-900/60 backdrop-blur-xl border border-neutral-800 rounded-3xl p-8 shadow-2xl">
+        <div className="w-full bg-neutral-900 border border-neutral-800 rounded-3xl p-8 shadow-2xl">
          
           <div className="flex items-center space-x-4 pb-6 border-b border-neutral-850 mb-6">
             <div className="w-12 h-12 rounded-full bg-purple-600/20 text-purple-400 flex items-center justify-center flex-shrink-0 font-bold text-xl">
-              G
+              OP
             </div>
             <div>
-              <h1 className="text-xl font-heading font-semibold text-white">Sign in with Google OIDC</h1>
+              <h1 className="text-xl font-heading font-semibold text-white">Custom OIDC Provider</h1>
               <p className="text-neutral-400 text-sm">Account Consent</p>
             </div>
           </div>
