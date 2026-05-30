@@ -194,17 +194,3 @@ The React frontend will start on `http://localhost:5174/` (or `5173`).
 
 ---
 
-## 🧪 Verification & Testing
-
-### 1. Automated Integration Test (Quickest)
-Run the automated test script in the project root:
-```bash
-node test-oidc.js
-```
-This script dynamically registers a client, registers a user, completes login, simulates the consent redirect loop, exchanges tokens, tests replay protection, queries user profile info, and verifies OIDC config/JWKS.
-
-### 2. Postman Collection
-Import the pre-configured [oidc-provider.postman_collection.json](file:///d:/oidc%20%20provider/oidc-provider.postman_collection.json) directly into Postman. It includes pre-request scripts that automatically extract values from response payloads to chain the flow.
-
-### 3. Manual Browser Verification
-A step-by-step manual testing guide using your browser and standard `curl` calls is available at [manual-testing-guide.md](file:///d:/oidc%20%20provider/manual-testing-guide.md).
