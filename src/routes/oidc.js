@@ -1,9 +1,8 @@
 import { Router } from "express"
-import { showLoginPage, handleLoginSubmit } from "../controller/oidc.js";
+import {authorizeService} from "../service/oidc.service.js"
 
 const oidcRouter = Router()
 
-oidcRouter.get("/authorize", showLoginPage);
-oidcRouter.post("/authorize", handleLoginSubmit);
+oidcRouter.get("/authorize",authorizeService);
 
 export default oidcRouter
