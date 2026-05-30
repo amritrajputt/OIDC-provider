@@ -96,8 +96,34 @@ const tokenService = async (req, res) => {
         id_token: idToken,
         refresh_token: refreshToken,
         token_type: "Bearer",
-        expires_in: 900 // 15 mins (seconds mein)
+        expires_in: 900 
     });
 }
 
-export { authorizeService, tokenService }
+const userInfoService = async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'invalid_token' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    let decoded;
+    try {
+        decoded = Jwt.verifyAccessToken(token);
+    } catch (error) {
+        return res.status(401).json({ error: 'invalid_token', message: error.message });
+    }
+
+    const user = await pool.query('SELECT id, name, email, created_at FROM users WHERE id = $1', [decoded.sub]);
+
+    if (user.rows.length === 0) {
+        return res.status(401).json({ error: 'invalid_token' });
+    }
+
+    return res.json({
+        sub: user.rows[0].id,
+        name: user.rows[0].name,
+        email: user.rows[0].email,
+    });
+};
+export { authorizeService, tokenService, userInfoService }
