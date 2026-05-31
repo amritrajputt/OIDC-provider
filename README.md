@@ -31,6 +31,23 @@ This project implements standard OAuth 2.0 and OIDC specifications, featuring as
 
 ---
 
+## ✅ Implementation Status
+
+### Phase 1: Foundation
+* [x] PostgreSQL database setup and migration scripts
+* [x] User registration and bcrypt-hashed password authentication
+* [x] Client application registration (generating client IDs and secrets)
+* [x] Asymmetric RSA key pair generation for RS256 token signing
+
+### Phase 2: OIDC Flow
+* [x] `/api/oidc/authorize` route with session and consent checks
+* [x] `/api/oidc/token` token exchange endpoint
+* [x] ID Token (RS256 JWT) generation with user claims
+* [x] `/api/oidc/userinfo` profile query endpoint using access token
+* [x] OpenID Discovery (`/.well-known/openid-configuration`) and JWKS (`/jwks.json`) endpoints
+
+---
+
 ## 🗺️ Flow Architecture
 
 ```mermaid
