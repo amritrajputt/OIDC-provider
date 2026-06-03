@@ -326,4 +326,39 @@ For a complete integration example, inspect the [/todo](file:///d:/oidc%20%20pro
 - **Backend (Express)**: [/todo/index.js](file:///d:/oidc%20%20provider/todo/index.js) shows authorization redirects, code-to-token exchanges, and `/userinfo` data fetching.
 - **Frontend (React)**: [/todo/frontend](file:///d:/oidc%20%20provider/todo/frontend) demonstrates custom login trigger and auth state checks.
 
+---
+
+## 🧠 Core Concepts & Design Decisions (Q&A Learnings)
+
+Here is a summary of the core architectural concepts, security boundaries, and design decisions validated during the development of this provider:
+
+### 1. Why does the Backend need a `FRONTEND_URL`?
+Although the OIDC protocol runs on the backend, the `/api/oidc/authorize` flow is **interactive**—it requires user interaction for authentication and consent. 
+* To separate user interface (UI) code from the business logic, the Express backend serves as the orchestrator. 
+* If a session is missing or consent is required, the backend issues a `302 Redirect` to the React frontend pages (`/login` and `/consent`). The `FRONTEND_URL` config tells the backend where those React routes reside.
+
+### 2. Token Lifecycles: Access vs. Refresh Tokens
+* **Access Tokens (Short-lived, e.g., 15 mins)**: Sent in the `Authorization: Bearer <token>` header of every API call. Because they traverse the network constantly, they are high-risk; keeping their lifespan short minimizes damage if a token is intercepted.
+* **Refresh Tokens (Long-lived, e.g., 7 days)**: Acts as the master key to get new access tokens. To reduce exposure, the client keeps it hidden and only sends it to the OIDC provider's `/refresh` endpoint when a local in-memory timestamp check indicates the access token is about to expire.
+
+### 3. Basic vs. Bearer Authentication
+* **`Basic` Auth**: Used for **Client Authentication** (server-to-server). A client application (e.g., Zomato Backend) authenticates itself to the OIDC server using `client_id` and `client_secret` (base64-encoded). Used at the `/token`, `/introspect`, and `/refresh` endpoints.
+* **`Bearer` Auth**: Used for **User Authorization**. A client presents an access token (JWT) to prove a user has authorized it to fetch their data. Used at resource endpoints like `/userinfo`.
+
+### 4. Client-Side Clock Checks vs. Server-Side Gatekeeping
+* **Client-side checks** (e.g., checking token expiry in memory before making a request) are for **User Experience (UX)**. They prevent requests from failing mid-way by pre-emptively refreshing tokens.
+* **Server-side checks** (cryptographically verifying the signature and expiration) are for **Security**. The server must never trust the client's clock or claims, as clients are easily tampered with or bypassed entirely.
+
+### 5. Offline JWKS Verification vs. Online Database Verification
+* **Offline Verification**: Client applications use the public keys exposed via `/jwks.json` to verify JWT signatures locally. This requires **zero network requests** to the OIDC provider and zero DB reads, making API calls extremely fast.
+* **Online/Database Verification**: The OIDC provider queries the database during `/introspect` and `/userinfo` to check for **real-time account status** (e.g., if a user has been deleted/banned, their token must be invalidated immediately before its natural expiry) and to fetch the most up-to-date user profile properties.
+
+### 6. Audience Verification (`aud` Check)
+In both `/introspect` and `/refresh` endpoints, we verify:
+```javascript
+if (decoded.aud !== client.client_id) { ... }
+```
+This ensures that Client A cannot introspect, read, or refresh tokens that belong to Client B. This prevents cross-client token leakage from becoming a security loophole.
+
+
 
