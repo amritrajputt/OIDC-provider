@@ -228,7 +228,7 @@ const authenticateClient = async (req) => {
     return client;
 };
 
-//token introspection is used to check if the token is valid or not 
+//token introspection is used to check if the token is valid or not... 
 const tokenIntrospectionService = async (req, res) => {
     const client = await authenticateClient(req);
 
@@ -273,7 +273,7 @@ const tokenIntrospectionService = async (req, res) => {
             isActive = false;
         }
     }
-
+//check that refresh token is of same client who is requesting for new token otherwise anyone can get access token by giving any other registered apps refresh token 
     if (isActive && decoded && decoded.aud !== client.client_id) {
         isActive = false;
     }
@@ -311,7 +311,7 @@ const refreshTokenService = async (req, res) => {
     } catch (error) {
         throw ApiError.unauthorized("invalid_grant: Invalid or expired refresh token");
     }
-
+//check that refresh token is of same client who is requesting for new token otherwise anyone can get access token by giving any other registered apps refresh token
     if (decoded.aud !== client.client_id) {
         throw ApiError.badRequest("invalid_grant: Client mismatch");
     }
