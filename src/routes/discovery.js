@@ -10,6 +10,7 @@ discoveryRouter.get("/.well-known/openid-configuration", (req, res) => {
         "authorization_endpoint": `${issuer}/api/oidc/authorize`,
         "token_endpoint": `${issuer}/api/oidc/token`,
         "userinfo_endpoint": `${issuer}/api/oidc/userinfo`,
+        "introspection_endpoint": `${issuer}/api/oidc/introspect`,
         "jwks_uri": `${issuer}/jwks.json`,
         "response_types_supported": ["code"],
         "subject_types_supported": ["public"],

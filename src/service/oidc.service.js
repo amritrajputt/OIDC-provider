@@ -181,4 +181,168 @@ const userInfoService = async (req, res) => {
         email: user.rows[0].email,
     });
 };
-export { authorizeService, tokenService, userInfoService }
+
+
+// Helper function to authenticate clients via Basic Auth or POST Body
+const authenticateClient = async (req) => {
+    let client_id, client_secret;
+
+    // Check Basic Auth header first
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Basic ')) {
+        try {
+            const credentials = Buffer.from(authHeader.substring(6), 'base64').toString('ascii').split(':');
+            client_id = credentials[0];
+            client_secret = credentials[1];
+        } catch (e) {
+            throw ApiError.unauthorized("invalid_client");
+        }
+    } else {
+        // Fallback to body params
+        client_id = req.body.client_id;
+        client_secret = req.body.client_secret;
+    }
+
+    if (!client_id || !client_secret) {
+        throw ApiError.unauthorized("invalid_client");
+    }
+
+    const clientQuery = await pool.query("SELECT * FROM clients WHERE client_id = $1", [client_id]);
+    if (clientQuery.rows.length === 0) {
+        throw ApiError.unauthorized("invalid_client");
+    }
+
+    const client = clientQuery.rows[0];
+    const isSecretValid = await bcrypt.compare(client_secret, client.client_secret);
+    if (!isSecretValid) {
+        throw ApiError.unauthorized("invalid_client");
+    }
+
+    return client;
+};
+
+//token introspection is used to check if the token is valid or not 
+const tokenIntrospectionService = async (req, res) => {
+    const client = await authenticateClient(req);
+
+    const { token, token_type_hint } = req.body;
+    if (!token) {
+        throw ApiError.badRequest("invalid_request: Token is required");
+    }
+
+    let decoded;
+    let isActive = false;
+    let tokenType = 'access_token';
+
+    try {
+        if (token_type_hint === 'refresh_token') {
+            try {
+                decoded = Jwt.verifyRefreshToken(token);
+                isActive = true;
+                tokenType = 'refresh_token';
+            } catch (err) {
+                decoded = Jwt.verifyAccessToken(token);
+                isActive = true;
+                tokenType = 'access_token';
+            }
+        } else {
+            try {
+                decoded = Jwt.verifyAccessToken(token);
+                isActive = true;
+                tokenType = 'access_token';
+            } catch (err) {
+                decoded = Jwt.verifyRefreshToken(token);
+                isActive = true;
+                tokenType = 'refresh_token';
+            }
+        }
+    } catch (error) {
+        isActive = false;
+    }
+
+    if (isActive && decoded && decoded.sub) {
+        const userQuery = await pool.query('SELECT id FROM users WHERE id = $1', [decoded.sub]);
+        if (userQuery.rows.length === 0) {
+            isActive = false;
+        }
+    }
+
+    if (isActive && decoded && decoded.aud !== client.client_id) {
+        isActive = false;
+    }
+
+    if (isActive) {
+        return res.status(200).json({
+            active: true,
+            scope: decoded.scope || 'openid',
+            client_id: decoded.aud,
+            sub: decoded.sub,
+            exp: decoded.exp,
+            iat: decoded.iat,
+            iss: decoded.iss,
+            token_type: tokenType
+        });
+    } else {
+        return res.status(200).json({
+            active: false
+        });
+    }
+};
+
+//refresh token 
+const refreshTokenService = async (req, res) => {
+    const client = await authenticateClient(req);
+
+    const { refresh_token } = req.body;
+    if (!refresh_token) {
+        throw ApiError.badRequest("invalid_request: Token is required");
+    }
+
+    let decoded;
+    try {
+        decoded = Jwt.verifyRefreshToken(refresh_token);
+    } catch (error) {
+        throw ApiError.unauthorized("invalid_grant: Invalid or expired refresh token");
+    }
+
+    if (decoded.aud !== client.client_id) {
+        throw ApiError.badRequest("invalid_grant: Client mismatch");
+    }
+
+    const userResult = await pool.query('SELECT id, name, email FROM users WHERE id = $1', [decoded.sub]);
+    if (userResult.rows.length === 0) {
+        throw ApiError.unauthorized("invalid_grant: User not found");
+    }
+    const user = userResult.rows[0];
+
+    const accessToken = Jwt.signAccessToken({
+        sub: user.id,
+        aud: client.client_id,
+        iss: process.env.ISSUER_URL || "http://localhost:3000",
+    }, "15m");
+
+    const newRefreshToken = Jwt.signRefreshToken({
+        sub: user.id,
+        aud: client.client_id,
+        iss: process.env.ISSUER_URL || "http://localhost:3000",
+        jti: uuidv4()
+    }, "7d");
+
+    const idToken = Jwt.signIdToken({
+        sub: user.id,
+        name: user.name,
+        email: user.email,
+        aud: client.client_id,
+        iss: process.env.ISSUER_URL || "http://localhost:3000",
+    }, "15m");
+
+    return res.status(200).json({
+        access_token: accessToken,
+        id_token: idToken,
+        refresh_token: newRefreshToken,
+        token_type: "Bearer",
+        expires_in: 900
+    });
+};
+
+export { authorizeService, tokenService, userInfoService, tokenIntrospectionService, refreshTokenService }

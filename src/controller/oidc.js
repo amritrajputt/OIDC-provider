@@ -1,4 +1,4 @@
-import { authorizeService, tokenService, userInfoService } from "../service/oidc.service.js"
+import { authorizeService, tokenService, userInfoService, tokenIntrospectionService, refreshTokenService } from "../service/oidc.service.js"
 
 const authorizeController = async (req, res) => {
     try {
@@ -33,4 +33,26 @@ const userInfoController = async (req, res) => {
     }
 }
 
-export { authorizeController, tokenController, userInfoController }
+const tokenIntrospectionController = async (req, res) => {
+    try {
+        await tokenIntrospectionService(req, res);
+    } catch (error) {
+        return res.status(error.statusCode || 400).json({
+            error: error.message || "invalid_request",
+            error_description: error.message || "An error occurred during token introspection"
+        });
+    }
+}
+
+const refreshTokenController = async (req, res) => {
+    try {
+        await refreshTokenService(req, res);
+    } catch (error) {
+        return res.status(error.statusCode || 400).json({
+            error: error.message || "invalid_request",
+            error_description: error.message || "An error occurred during token refresh"
+        });
+    }
+}
+
+export { authorizeController, tokenController, userInfoController,tokenIntrospectionController,refreshTokenController }
