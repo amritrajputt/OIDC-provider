@@ -46,7 +46,7 @@ app.get("/health", (req: Request, res: Response) => {
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-    app.get("(.*)", (req: Request, res: Response) => {
+    app.get(/.*/, (req: Request, res: Response) => {
         if (req.path.startsWith("/api") || req.path.startsWith("/.well-known")) {
             res.status(404).json({ success: false, message: "Not found" });
             return;
