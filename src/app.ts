@@ -44,14 +44,14 @@ app.get("/health", (req: Request, res: Response) => {
 });
 
 if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../frontend/dist')));
+    app.use(express.static(path.join(process.cwd(), 'frontend/dist')));
 
     app.get(/.*/, (req: Request, res: Response) => {
         if (req.path.startsWith("/api") || req.path.startsWith("/.well-known")) {
             res.status(404).json({ success: false, message: "Not found" });
             return;
         }
-        res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+        res.sendFile(path.join(process.cwd(), 'frontend/dist/index.html'));
     })
 } else {
     app.get("/", (req: Request, res: Response) => {
