@@ -46,6 +46,12 @@ This project implements standard OAuth 2.0 and OIDC specifications, featuring as
 * [x] `/api/oidc/userinfo` profile query endpoint using access token
 * [x] OpenID Discovery (`/.well-known/openid-configuration`) and JWKS (`/jwks.json`) endpoints
 
+### Phase 3: TypeScript Migration & Refactoring
+* [x] Full migration of backend from JavaScript to typed TypeScript with strict compiler validation
+* [x] Improved Express 5 compatibility by replacing string wildcards with regex matchers
+* [x] Normalized global error handling across controllers using middleware forwarding
+* [x] Segregated Todo App client into a standalone workspace directory
+
 ---
 
 ## 🗺️ Flow Architecture
@@ -128,34 +134,36 @@ oidc-provider/
 │   │   └── index.css           # Tailwind CSS v4 configuration
 │   ├── vite.config.js          # Vite config with @tailwindcss/vite
 │   └── package.json
-├── src/                        # Express Backend OIDC Provider
+├── src/                        # Express Backend OIDC Provider (TypeScript)
 │   ├── controller/
-│   │   ├── auth.js             # Auth route handler (Register/Login)
-│   │   ├── clients.js          # Client registration handler
-│   │   └── oidc.js             # Core OIDC protocol handlers
+│   │   ├── auth.controller.ts  # Auth route handler (Register/Login)
+│   │   ├── clients.controller.ts # Client registration handler
+│   │   └── oidc.controller.ts  # Core OIDC protocol handlers
 │   ├── dto/
-│   │   └── dto.auth.js         # Input validation schemas
+│   │   └── dto.auth.ts         # Input validation schemas
 │   ├── model/
-│   │   └── db.js               # PostgreSQL connection pool (with auto-seeding)
+│   │   └── db.ts               # PostgreSQL connection pool (with auto-seeding)
 │   ├── routes/
-│   │   ├── auth.js
-│   │   ├── clients.js
-│   │   ├── demoClient.js       # Demo Client Router (/demo-client)
-│   │   ├── discovery.js        # Discovery & JWKS routes
-│   │   └── oidc.js
+│   │   ├── auth.ts
+│   │   ├── clients.ts
+│   │   ├── demoClient.ts       # Demo Client Router (/demo-client)
+│   │   ├── discovery.ts        # Discovery & JWKS routes
+│   │   └── oidc.ts
 │   ├── service/
-│   │   ├── auth.service.js     # User registration/login logic
-│   │   ├── client.service.js   # Client credential registration
-│   │   └── oidc.service.js     # OIDC Core endpoint logic
+│   │   ├── auth.service.ts     # User registration/login logic
+│   │   ├── client.service.ts   # Client credential registration
+│   │   └── oidc.service.ts     # OIDC Core endpoint logic
 │   ├── utils/
-│   │   ├── keys.js             # RSA public/private key generator
-│   │   └── utils.jwt.js        # Token signing & verification
-│   └── app.js                  # App middlewares and routes mounting
+│   │   ├── keys.ts             # RSA public/private key generator
+│   │   ├── oidc.utils.ts       # Reusable OIDC validation utilities
+│   │   └── utils.jwt.ts        # Token signing & verification
+│   ├── app.ts                  # App middlewares and routes mounting
+│   └── type.d.ts               # Custom express-session type augmentations
 ├── .env                        # Server configurations
 ├── docker-compose.yml          # Postgres database container definition
-├── index.js                    # Backend entrypoint
+├── index.ts                    # Backend entrypoint
 ├── package.json
-└── todo/                       # Complete OIDC client implementation (Todo App)
+└── tsconfig.json               # TypeScript configuration
 ```
 
 ---
@@ -218,7 +226,7 @@ The React frontend will start on `http://localhost:5174/` (or `5173`).
 
 ## 🔌 How to Configure & Integrate OIDC in Your Project
 
-To integrate your client application with this custom OIDC Identity Provider, follow the steps below. We also provide a complete, standalone reference application inside the [/todo](file:///d:/oidc%20%20provider/todo) folder that implements this exact flow.
+To integrate your client application with this custom OIDC Identity Provider, follow the steps below. We also provide a complete, standalone reference Todo application (originally under `/todo`, now separated into its own local folder) that implements this exact flow.
 
 ### 1. Register Your Client Application
 Before initiating the flow, you must register your application with the OIDC provider to obtain a `client_id` and `client_secret`.
@@ -322,9 +330,9 @@ Using the UserInfo response:
 ---
 
 ## 📝 Todo Application Reference
-For a complete integration example, inspect the [/todo](file:///d:/oidc%20%20provider/todo) folder:
-- **Backend (Express)**: [/todo/index.js](file:///d:/oidc%20%20provider/todo/index.js) shows authorization redirects, code-to-token exchanges, and `/userinfo` data fetching.
-- **Frontend (React)**: [/todo/frontend](file:///d:/oidc%20%20provider/todo/frontend) demonstrates custom login trigger and auth state checks.
+For a complete integration example, inspect the standalone Todo App code (originally inside the repository):
+- **Backend (Express)**: Shows authorization redirects, code-to-token exchanges, and `/userinfo` data fetching.
+- **Frontend (React)**: Demonstrates custom login trigger and auth state checks.
 
 ---
 
