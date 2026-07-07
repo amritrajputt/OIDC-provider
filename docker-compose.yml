@@ -13,6 +13,12 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+    container_name: oidc_redis
+    ports:
+      - "6383:6379"
+    restart: always    
 
 volumes:
   postgres_data:

@@ -4,6 +4,8 @@ import authRouter from "./routes/auth.js";
 import clientRouter from "./routes/clients.js";
 import oidcRouter from "./routes/oidc.js";
 import session from 'express-session'
+import { RedisStore } from 'connect-redis';
+import redisClient from './model/redis.js';
 import discoveryRoutes from './routes/discovery.js';
 import demoClientRouter from "./routes/demoClient.js";
 import path from "path";
@@ -29,11 +31,25 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Initialize Redis Store for express-session
+const redisStore = new RedisStore({
+    client: redisClient,
+    prefix: "oidc_sess:", // Redis keys will be saved as oidc_sess:<sid>
+});
+
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    store: redisStore,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-123',
     resave: false,
-    saveUninitialized: false
-}))
+    saveUninitialized: false,
+    cookie: {
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days expiry
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true, // Prevents XSS cookie theft
+        sameSite: 'lax'
+    }
+}));
+
 
 app.use("/api/auth", authRouter);
 app.use("/api/clients", clientRouter);
