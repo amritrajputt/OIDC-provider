@@ -5,6 +5,22 @@ import bcrypt from "bcrypt"
 import { Jwt } from "../utils/utils.jwt.js"
 import { isValidRedirectUri } from "../utils/oidc.utils.js";
 
+import crypto from "crypto";
+
+// Base64Url encoder to match RFC 7636 PKCE spec
+function base64UrlEncode(buffer: Buffer): string {
+    return buffer.toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
+
+function generateS256Challenge(verifier: string): string {
+    const hash = crypto.createHash('sha256').update(verifier).digest();
+    return base64UrlEncode(hash);
+}
+
+
 // --- AUTHORIZE SERVICE ---
 interface AuthorizeParams {
     clientId: string;
@@ -15,10 +31,12 @@ interface AuthorizeParams {
     consented: string;
     userId: string | null | undefined;
     host: string;
+     codeChallenge?: string;        // <--- ADD THIS
+    codeChallengeMethod?: string;
 }
 
 const authorizeService = async (params: AuthorizeParams) => {
-    const { clientId, redirectUri, responseType, scope, state, consented, userId, host } = params;
+    const { clientId, redirectUri, responseType, scope, state, consented, userId, host, codeChallenge, codeChallengeMethod } = params;
 
     const clientQuery = await pool.query("SELECT * FROM clients WHERE client_id=$1", [clientId]);
     if (clientQuery.rows.length === 0) {
@@ -65,8 +83,8 @@ const authorizeService = async (params: AuthorizeParams) => {
     const code = uuidv4();
     const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
     await pool.query(
-        "INSERT INTO autorization_codes (code, user_id, client_id, expires_at, is_used) VALUES ($1, $2, $3, $4, $5)",
-        [code, sessionUserId, clientQuery.rows[0].id, expiresAt, false]
+        "INSERT INTO autorization_codes (code, user_id, client_id, expires_at, is_used, code_challenge, code_challenge_method) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [code, sessionUserId, clientQuery.rows[0].id, expiresAt, false, codeChallenge || null, codeChallengeMethod || null]
     );
 
     const finalUrl = `${redirectUri}?code=${code}&state=${state}`;
@@ -117,13 +135,14 @@ const authenticateClient = async (params: ClientAuthParams) => {
 interface AuthCodeParams {
     code: string;
     clientId: string;
-    clientSecret: string;
+    clientSecret?: string;
     redirectUri: string;
     host: string;
+    codeVerifier?: string;
 }
 
 const exchangeAuthCodeService = async (params: AuthCodeParams) => {
-    const { code, clientId, clientSecret, redirectUri, host } = params;
+    const { code, clientId, clientSecret, redirectUri, host, codeVerifier } = params;
 
     const clientQuery = await pool.query("SELECT * FROM clients WHERE client_id = $1", [clientId]);
     if (clientQuery.rows.length === 0) {
@@ -142,11 +161,7 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
         throw ApiError.badRequest("invalid_redirect_uri");
     }
 
-    const isSecretValid = await bcrypt.compare(clientSecret, client.client_secret);
-    if (!isSecretValid) {
-        throw ApiError.badRequest("invalid_client");
-    }
-
+    // Mark the code as used in the database
     const updateResult = await pool.query(
         "UPDATE autorization_codes SET is_used = true WHERE code = $1 AND is_used = false RETURNING *",
         [code]
@@ -165,9 +180,42 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
         throw ApiError.badRequest("invalid_client: Code client mismatch");
     }
 
+    // --- PKCE VERIFICATION BLOCK ---
+    if (codeRecord.code_challenge) {
+        // PKCE flow is enabled for this code
+        if (!codeVerifier) {
+            throw ApiError.badRequest("invalid_grant: code_verifier is required for PKCE flow");
+        }
+
+        let isVerifierValid = false;
+        if (codeRecord.code_challenge_method === 'S256') {
+            const calculatedChallenge = generateS256Challenge(codeVerifier);
+            isVerifierValid = (calculatedChallenge === codeRecord.code_challenge);
+        } else if (codeRecord.code_challenge_method === 'plain') {
+            isVerifierValid = (codeVerifier === codeRecord.code_challenge);
+        } else {
+            throw ApiError.badRequest("server_error: Unsupported code_challenge_method");
+        }
+
+        if (!isVerifierValid) {
+            throw ApiError.badRequest("invalid_grant: Invalid code_verifier");
+        }
+    } else {
+        // Standard flow requires verification of client_secret
+        if (!clientSecret) {
+            throw ApiError.badRequest("invalid_client: client_secret is required");
+        }
+        const isSecretValid = await bcrypt.compare(clientSecret, client.client_secret);
+        if (!isSecretValid) {
+            throw ApiError.badRequest("invalid_client");
+        }
+    }
+    // --- END OF PKCE VERIFICATION BLOCK ---
+
     const userQuery = await pool.query("SELECT * FROM users WHERE id = $1", [codeRecord.user_id]);
     const user = userQuery.rows[0];
 
+    // (Rest of token signing and returning logic remains same as before)
     const accessToken = await Jwt.signAccessToken({
         sub: user.id,
         aud: client.client_id,
@@ -183,12 +231,10 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
     }, "7d");
 
     const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
     await pool.query(
         "INSERT INTO refresh_tokens (jti, user_id, client_id, expires_at, parent_jti) VALUES ($1, $2, $3, $4, NULL)",
         [refreshJti, user.id, client.id, refreshExpiresAt]
     );
-
 
     const idToken = await Jwt.signIdToken({
         sub: user.id,
@@ -206,6 +252,7 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
         expires_in: 900
     };
 };
+
 
 // --- EXCHANGE REFRESH TOKEN ---
 interface RefreshTokenParams {
@@ -230,29 +277,7 @@ const exchangeRefreshTokenService = async (params: RefreshTokenParams) => {
         throw ApiError.badRequest("invalid_grant: Client mismatch");
     }
 
-    const tokenQuery = await pool.query(
-        "SELECT * FROM refresh_tokens WHERE jti = $1",
-        [decoded.jti]
-    );
-    if (tokenQuery.rows.length === 0) {
-        throw ApiError.unauthorized("invalid_grant: Token not found or untracked");
-    }
-    const tokenRecord = tokenQuery.rows[0];
-    if (tokenRecord.is_revoked) {
-        console.warn(`SECURITY ALERT: Replay attack detected for user ${decoded.sub}. Refresh token ${decoded.jti} was reused!`);
-
-        await pool.query(
-            "UPDATE refresh_tokens SET is_revoked = TRUE WHERE user_id = $1 AND client_id = $2",
-            [decoded.sub, client.id]
-        );
-
-        throw ApiError.unauthorized("invalid_grant: Refresh token has already been used. Session compromised.");
-    }
-
-    if (tokenRecord.expires_at < new Date()) {
-        throw ApiError.unauthorized("invalid_grant: Refresh token expired");
-    }
-
+    
 
     const userResult = await pool.query('SELECT id, name, email FROM users WHERE id = $1', [decoded.sub]);
     if (userResult.rows.length === 0) {
@@ -286,15 +311,47 @@ const exchangeRefreshTokenService = async (params: RefreshTokenParams) => {
     const dbClient = await pool.connect();
     try {
         await dbClient.query('BEGIN');
+
+        const tokenQuery = await dbClient.query(
+            "SELECT * FROM refresh_tokens WHERE jti = $1 FOR UPDATE",
+            [decoded.jti]
+        );
+        if (tokenQuery.rows.length === 0) {
+            throw ApiError.unauthorized("invalid_grant: Token not found or untracked");
+        }
+
+        const tokenRecord = tokenQuery.rows[0];
+
+        if (tokenRecord.is_revoked) {
+            console.warn(`SECURITY ALERT: Replay attack detected for user ${decoded.sub}. Refresh token ${decoded.jti} was reused!`);
+            
+            
+            await dbClient.query(
+                "UPDATE refresh_tokens SET is_revoked = TRUE WHERE user_id = $1 AND client_id = $2",
+                [decoded.sub, client.id]
+            );
+
+            await dbClient.query('COMMIT');
+            throw ApiError.unauthorized("invalid_grant: Refresh token has already been used. Session compromised.");
+        }
+
+        if (tokenRecord.expires_at < new Date()) {
+            throw ApiError.unauthorized("invalid_grant: Refresh token expired");
+        }
+
+       
         await dbClient.query(
             "UPDATE refresh_tokens SET is_revoked = TRUE WHERE jti = $1",
             [decoded.jti]
         );
+
+       
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         await dbClient.query(
             "INSERT INTO refresh_tokens (jti, user_id, client_id, expires_at, parent_jti) VALUES ($1, $2, $3, $4, $5)",
             [newJti, user.id, client.id, expiresAt, decoded.jti]
         );
+
         await dbClient.query('COMMIT');
     } catch (dbError) {
         await dbClient.query('ROLLBACK');
@@ -331,6 +388,33 @@ const userInfoService = async (accessToken: string) => {
         email: user.rows[0].email,
     };
 };
+
+interface RevokeParams {
+    token: string;
+    tokenTypeHint?: string;
+    clientId?: string;
+    clientSecret?: string;
+    authHeader?: string;
+}
+
+const revokeTokenService = async (params: RevokeParams) => {
+    const client = await authenticateClient(params);
+    const { token } = params;
+    try {
+        const decoded = await Jwt.verifyRefreshToken(token) as any;
+        
+        if (decoded.aud !== client.client_id) {
+            throw ApiError.badRequest("invalid_grant: Client mismatch");
+        }
+        await pool.query(
+            "UPDATE refresh_tokens SET is_revoked = TRUE WHERE jti = $1",
+            [decoded.jti]
+        );
+    } catch (err) {
+        console.warn("Revocation requested for invalid/expired token. Skipping.");
+    }
+};
+
 
 // --- INTROSPECTION SERVICE ---
 interface IntrospectParams {
@@ -411,5 +495,6 @@ export {
     exchangeAuthCodeService,
     exchangeRefreshTokenService,
     userInfoService,
-    tokenIntrospectionService
+    tokenIntrospectionService,
+    revokeTokenService
 };

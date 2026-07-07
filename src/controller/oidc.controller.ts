@@ -5,13 +5,14 @@ import {
     exchangeAuthCodeService, 
     exchangeRefreshTokenService, 
     userInfoService, 
-    tokenIntrospectionService 
+    tokenIntrospectionService ,
+    revokeTokenService
 } from "../service/oidc.service.js";
 
 
 const authorizeController = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { client_id, redirect_uri, response_type, scope, state, consented } = req.query;
+        const { client_id, redirect_uri, response_type, scope, state, consented, code_challenge, code_challenge_method } = req.query;
         const userId = req.session.userId;
         const host = req.get('host') || '';
 
@@ -23,7 +24,9 @@ const authorizeController = async (req: Request, res: Response, next: NextFuncti
             state: state as string,
             consented: consented as string,
             userId,
-            host
+            host,
+            codeChallenge: code_challenge as string,
+            codeChallengeMethod: code_challenge_method as string
         });
 
         if (result.type === 'redirect') {
@@ -42,7 +45,8 @@ const authorizeController = async (req: Request, res: Response, next: NextFuncti
 
 const tokenController = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { grant_type, code, client_id, client_secret, redirect_uri, refresh_token } = req.body;
+        const { grant_type, code, client_id, client_secret, redirect_uri, refresh_token, code_verifier } = req.body;
+
         const host = req.get('host') || '';
         const authHeader = req.headers.authorization; // Basic Auth support
 
@@ -53,7 +57,7 @@ const tokenController = async (req: Request, res: Response, next: NextFunction) 
         let tokenResult;
 
         if (grant_type === "authorization_code") {
-            if (!code || !client_id || !client_secret || !redirect_uri) {
+            if (!code || !client_id || !redirect_uri) {
                 throw ApiError.badRequest("invalid_request: Missing parameters for authorization_code grant");
             }
             tokenResult = await exchangeAuthCodeService({
@@ -118,9 +122,35 @@ const tokenIntrospectionController = async (req: Request, res: Response, next: N
     }
 };
 
+const revokeController = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { token, token_type_hint, client_id, client_secret } = req.body;
+        const authHeader = req.headers.authorization;
+
+        if (!token) {
+            throw ApiError.badRequest("invalid_request: Token is required for revocation");
+        }
+
+        await revokeTokenService({
+            token,
+            tokenTypeHint: token_type_hint,
+            clientId: client_id,
+            clientSecret: client_secret,
+            authHeader
+        });
+
+        // RFC 7009 specifies returning a 200 OK status on success (even if token is already invalid)
+        return res.status(200).json({ success: true, message: "Token revoked successfully" });
+    } catch (error) {
+        next(error);
+    }
+};
+
+
 export { 
     authorizeController, 
     tokenController, 
     userInfoController, 
-    tokenIntrospectionController 
+    tokenIntrospectionController,
+    revokeController 
 };
