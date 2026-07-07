@@ -34,10 +34,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(generalRateLimiter);
 
-// Initialize Redis Store for express-session
+
 const redisStore = new RedisStore({
     client: redisClient,
-    prefix: "oidc_sess:", // Redis keys will be saved as oidc_sess:<sid>
+    prefix: "oidc_sess:", // Redis keys oidc_sess:<sid>
 });
 
 app.use(session({
@@ -48,13 +48,13 @@ app.use(session({
     cookie: {
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Days expiry
         secure: process.env.NODE_ENV === 'production',
-        httpOnly: true, // Prevents XSS cookie theft
+        httpOnly: true, 
         sameSite: 'lax'
     }
 }));
 
 
-app.use("/api/auth",authRateLimiter, authRouter);
+app.use("/api/auth",authRateLimiter ,authRouter);
 app.use("/api/clients", clientRouter);
 app.use("/api/oidc", oidcRouter);
 app.use('/', discoveryRoutes);

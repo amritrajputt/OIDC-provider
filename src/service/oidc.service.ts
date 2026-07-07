@@ -7,7 +7,6 @@ import { isValidRedirectUri } from "../utils/oidc.utils.js";
 
 import crypto from "crypto";
 
-// Base64Url encoder to match RFC 7636 PKCE spec
 function base64UrlEncode(buffer: Buffer): string {
     return buffer.toString('base64')
         .replace(/\+/g, '-')
@@ -21,7 +20,6 @@ function generateS256Challenge(verifier: string): string {
 }
 
 
-// --- AUTHORIZE SERVICE ---
 interface AuthorizeParams {
     clientId: string;
     redirectUri: string;
@@ -31,7 +29,7 @@ interface AuthorizeParams {
     consented: string;
     userId: string | null | undefined;
     host: string;
-     codeChallenge?: string;        // <--- ADD THIS
+     codeChallenge?: string;      
     codeChallengeMethod?: string;
 }
 
@@ -60,12 +58,12 @@ const authorizeService = async (params: AuthorizeParams) => {
 
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
-    // Demo user restriction validation
+
     let sessionUserId = userId;
     if (userId) {
         const userQuery = await pool.query("SELECT email FROM users WHERE id = $1", [userId]);
         if (userQuery.rows.length > 0 && userQuery.rows[0].email === 'demo@example.com' && clientId !== 'demo-client-id') {
-            sessionUserId = null; // Clear session
+            sessionUserId = null;
         }
     }
 
@@ -90,8 +88,6 @@ const authorizeService = async (params: AuthorizeParams) => {
     const finalUrl = `${redirectUri}?code=${code}&state=${state}`;
     return { type: 'redirect', url: finalUrl, sessionUserId };
 };
-
-// --- AUTHENTICATE CLIENT HELPER ---
 interface ClientAuthParams {
     clientId?: string;
     clientSecret?: string;
@@ -101,8 +97,6 @@ interface ClientAuthParams {
 const authenticateClient = async (params: ClientAuthParams) => {
     let client_id = params.clientId;
     let client_secret = params.clientSecret;
-
-    // Check Basic Auth header first
     if (params.authHeader && params.authHeader.startsWith('Basic ')) {
         try {
             const credentials = Buffer.from(params.authHeader.substring(6), 'base64').toString('ascii').split(':');
@@ -131,7 +125,6 @@ const authenticateClient = async (params: ClientAuthParams) => {
     return client;
 };
 
-// --- EXCHANGE AUTH CODE ---
 interface AuthCodeParams {
     code: string;
     clientId: string;
@@ -161,7 +154,6 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
         throw ApiError.badRequest("invalid_redirect_uri");
     }
 
-    // Mark the code as used in the database
     const updateResult = await pool.query(
         "UPDATE autorization_codes SET is_used = true WHERE code = $1 AND is_used = false RETURNING *",
         [code]
@@ -215,7 +207,6 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
     const userQuery = await pool.query("SELECT * FROM users WHERE id = $1", [codeRecord.user_id]);
     const user = userQuery.rows[0];
 
-    // (Rest of token signing and returning logic remains same as before)
     const accessToken = await Jwt.signAccessToken({
         sub: user.id,
         aud: client.client_id,
@@ -254,7 +245,6 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
 };
 
 
-// --- EXCHANGE REFRESH TOKEN ---
 interface RefreshTokenParams {
     refreshToken: string;
     clientId?: string;
@@ -368,7 +358,7 @@ const exchangeRefreshTokenService = async (params: RefreshTokenParams) => {
     };
 };
 
-// --- USER INFO SERVICE ---
+
 const userInfoService = async (accessToken: string) => {
     let decoded: any;
     try {
@@ -416,7 +406,6 @@ const revokeTokenService = async (params: RevokeParams) => {
 };
 
 
-// --- INTROSPECTION SERVICE ---
 interface IntrospectParams {
     token: string;
     tokenTypeHint?: string;
