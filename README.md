@@ -9,8 +9,10 @@ This project implements standard OAuth 2.0 and OIDC specifications, featuring as
 ## 🛠️ Key Features
 
 ### 🔐 1. Cryptography & Security
-* **Asymmetric RS256 Signing**: Tokens are signed using an RSA Private Key and verified by client apps using the server's public key exposed via JWKS.
-* **Anti-Replay Protection**: Atomic, single-transaction authorization code consumption prevents race conditions (concurrent replay attacks) during token exchanges.
+* **Asymmetric RS256 Signing**: Tokens are signed using RSA Private Keys and verified by client apps using public keys exposed via JWKS.
+* **Dynamic Key Rotation**: Programmatic RSA keypair generation and rotation via `/rotate-keys` API endpoint. Multiple active/retired keys are exposed in JWKS, preventing session breaks during rollover.
+* **Stateful Refresh Token Rotation (RTR)**: Tracks refresh token lineages in the database. Protects against token theft/replay attacks using PostgreSQL transaction-level row locking (`FOR UPDATE`).
+* **PKCE Support (RFC 7636)**: Implements Proof Key for Code Exchange (`code_challenge` / `code_verifier` S256 verification) to support secure logins for public clients (like SPAs and mobile apps) without client secrets.
 * **Credentials Security**: Hashing of user passwords and client secrets via `bcrypt` (10 rounds).
 * **Automatic Localhost CORS**: Whitelists dynamically any local development port (`localhost:\d+`) during development while maintaining strict credentials tracking.
 
@@ -22,35 +24,16 @@ This project implements standard OAuth 2.0 and OIDC specifications, featuring as
 
 ### 📚 3. Standard OIDC Endpoints
 * **Discovery Config**: `/.well-known/openid-configuration` returns all standard provider metadata.
-* **JWKS Endpoint**: `/jwks.json` and `/.well-known/jwks.json` publish the server's active RSA Public Key.
-* **Core Flow Endpoints**: `/api/oidc/authorize`, `/api/oidc/token`, and `/api/oidc/userinfo`.
+* **JWKS Endpoint**: `/jwks.json` and `/.well-known/jwks.json` publish active public keys.
+* **Core Flow Endpoints**: `/api/oidc/authorize`, `/api/oidc/token`, `/api/oidc/userinfo`, and `/api/oidc/revoke` (RFC 7009 Token Revocation).
 
-### 🖥️ 4. Built-in End-to-End Demo Client App
+### 🚀 4. Performance & Rate Limiting (Redis-Backed)
+* **Persistent Redis Session Store**: Session middleware integrated with Redis via `ioredis` and `connect-redis` for fast, memory-safe persistence across server restarts.
+* **API Rate Limiting**: Protects sensitive endpoints (Auth, Login, Token) using `express-rate-limit` with `rate-limit-redis` to prevent brute force credentials stuffing.
+
+### 🖥️ 5. Built-in End-to-End Demo Client App
 * **Interactive Demo**: `/demo-client` hosts a self-contained web app to test the login, consent, and token exchanges directly from your browser.
 * **Auto-Seeding**: Registers standard test client (`demo-client-id`) and test user credentials (`demo@example.com` / `password123`) on startup.
-
----
-
-## ✅ Implementation Status
-
-### Phase 1: Foundation
-* [x] PostgreSQL database setup and migration scripts
-* [x] User registration and bcrypt-hashed password authentication
-* [x] Client application registration (generating client IDs and secrets)
-* [x] Asymmetric RSA key pair generation for RS256 token signing
-
-### Phase 2: OIDC Flow
-* [x] `/api/oidc/authorize` route with session and consent checks
-* [x] `/api/oidc/token` token exchange endpoint
-* [x] ID Token (RS256 JWT) generation with user claims
-* [x] `/api/oidc/userinfo` profile query endpoint using access token
-* [x] OpenID Discovery (`/.well-known/openid-configuration`) and JWKS (`/jwks.json`) endpoints
-
-### Phase 3: TypeScript Migration & Refactoring
-* [x] Full migration of backend from JavaScript to typed TypeScript with strict compiler validation
-* [x] Improved Express 5 compatibility by replacing string wildcards with regex matchers
-* [x] Normalized global error handling across controllers using middleware forwarding
-* [x] Segregated Todo App client into a standalone workspace directory
 
 ---
 
@@ -115,16 +98,19 @@ sequenceDiagram
 oidc-provider/
 ├── common/                     # Shared wrappers
 │   ├── dto/
-│   │   └── base.dto.js         # Base Joi schema wrapper
+│   │   └── base.dto.ts         # Base Joi schema wrapper
 │   ├── middleware/
-│   │   └── validate.middleware.js # Request schema validator
-│   ├── ApiError.js             # Standard Express error wrapper
-│   └── ApiResponse.js          # Standard API response wrapper
+│   │   ├── validate.middleware.ts # Request schema validator
+│   │   └── rateLimitter.middleware.ts # Redis-backed rate limiter
+│   ├── ApiError.ts             # Standard Express error wrapper
+│   └── ApiResponse.ts          # Standard API response wrapper
 ├── db/
 │   └── migrations/
 │       ├── 001_create_users.sql
 │       ├── 002_create_clients.sql
-│       └── 003_create_authorization_codes.sql
+│       ├── 003_create_authorization_codes.sql
+│       ├── 004_create_signing_keys.sql
+│       └── 005_create_refresh_token.sql
 ├── frontend/                   # Decoupled React Client App
 │   ├── src/
 │   │   ├── components/
@@ -142,7 +128,8 @@ oidc-provider/
 │   ├── dto/
 │   │   └── dto.auth.ts         # Input validation schemas
 │   ├── model/
-│   │   └── db.ts               # PostgreSQL connection pool (with auto-seeding)
+│   │   ├── db.ts               # PostgreSQL connection pool (with auto-seeding)
+│   │   └── redis.ts            # Redis/ioredis connection pool
 │   ├── routes/
 │   │   ├── auth.ts
 │   │   ├── clients.ts
@@ -160,7 +147,7 @@ oidc-provider/
 │   ├── app.ts                  # App middlewares and routes mounting
 │   └── type.d.ts               # Custom express-session type augmentations
 ├── .env                        # Server configurations
-├── docker-compose.yml          # Postgres database container definition
+├── docker-compose.yml          # Postgres and Redis container definitions
 ├── index.ts                    # Backend entrypoint
 ├── package.json
 └── tsconfig.json               # TypeScript configuration
@@ -176,6 +163,7 @@ Create a `.env` file in the root directory:
 PORT=3000
 ISSUER_URL=http://localhost:3000
 FRONTEND_URL=http://localhost:5174
+REDIS_URL=redis://localhost:6383
 
 DB_HOST=localhost
 DB_PORT=5433
@@ -192,10 +180,10 @@ PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
 -----END PRIVATE KEY-----"
 ```
 
-### 2. Launch PostgreSQL Container
-Spin up the database container in Docker:
+### 2. Launch Docker Services (PostgreSQL & Redis)
+Spin up the database and caching containers in Docker:
 ```bash
-docker-compose up -d postgres
+docker compose up -d
 ```
 
 ### 3. Initialize Database Migrations
@@ -205,6 +193,8 @@ Run the SQL migration scripts in sequence to set up tables:
 Get-Content db/migrations/001_create_users.sql | docker exec -i oidc_postgres psql -U oidc_user -d oidc_db
 Get-Content db/migrations/002_create_clients.sql | docker exec -i oidc_postgres psql -U oidc_user -d oidc_db
 Get-Content db/migrations/003_create_authorization_codes.sql | docker exec -i oidc_postgres psql -U oidc_user -d oidc_db
+Get-Content db/migrations/004_create_signing_keys.sql | docker exec -i oidc_postgres psql -U oidc_user -d oidc_db
+Get-Content db/migrations/005_create_refresh_token.sql | docker exec -i oidc_postgres psql -U oidc_user -d oidc_db
 ```
 
 ### 4. Run the Servers
@@ -346,12 +336,16 @@ Although the OIDC protocol runs on the backend, the `/api/oidc/authorize` flow i
 * If a session is missing or consent is required, the backend issues a `302 Redirect` to the React frontend pages (`/login` and `/consent`). The `FRONTEND_URL` config tells the backend where those React routes reside.
 
 ### 2. Token Lifecycles: Access vs. Refresh Tokens
-* **Access Tokens (Short-lived, e.g., 15 mins)**: Sent in the `Authorization: Bearer <token>` header of every API call. Because they traverse the network constantly, they are high-risk; keeping their lifespan short minimizes damage if a token is intercepted.
-* **Refresh Tokens (Long-lived, e.g., 7 days)**: Acts as the master key to get new access tokens. To reduce exposure, the client keeps it hidden and only sends it to the OIDC provider's `/refresh` endpoint when a local in-memory timestamp check indicates the access token is about to expire.
+* **Access Tokens (Short-lived, e.g., 15 mins)**: Sent in the `Authorization: Bearer <token>` header of every API call. Keeping their lifespan short minimizes risk if a token is intercepted.
+* **Refresh Tokens (Long-lived, e.g., 7 days)**: Acts as the master key to get new access tokens. The client keeps it hidden and sends it to `/api/oidc/token` under `grant_type=refresh_token` when the access token is about to expire.
 
 ### 3. Basic vs. Bearer Authentication
-* **`Basic` Auth**: Used for **Client Authentication** (server-to-server). A client application (e.g., Zomato Backend) authenticates itself to the OIDC server using `client_id` and `client_secret` (base64-encoded). Used at the `/token`, `/introspect`, and `/refresh` endpoints.
+* **`Basic` Auth**: Used for **Client Authentication** (server-to-server). A client application (e.g., Zomato Backend) authenticates itself to the OIDC server using `client_id` and `client_secret` (base64-encoded). Used at the `/token`, `/introspect`, and `/revoke` endpoints.
 * **`Bearer` Auth**: Used for **User Authorization**. A client presents an access token (JWT) to prove a user has authorized it to fetch their data. Used at resource endpoints like `/userinfo`.
+
+### 4. PKCE (Proof Key for Code Exchange) Flow
+* PKCE is a security mechanism designed to prevent authorization code interception attacks on public clients (such as Single Page Apps or Mobile Apps) that cannot securely store a `client_secret`.
+* By exchanging a hashed `code_challenge` at the authorization step and validating it with the raw `code_verifier` at the token exchange step, we prove client identity dynamically without exposing hardcoded secrets in front-end bundles.
 
 ### 4. Client-Side Clock Checks vs. Server-Side Gatekeeping
 * **Client-side checks** (e.g., checking token expiry in memory before making a request) are for **User Experience (UX)**. They prevent requests from failing mid-way by pre-emptively refreshing tokens.
@@ -362,11 +356,13 @@ Although the OIDC protocol runs on the backend, the `/api/oidc/authorize` flow i
 * **Online/Database Verification**: The OIDC provider queries the database during `/introspect` and `/userinfo` to check for **real-time account status** (e.g., if a user has been deleted/banned, their token must be invalidated immediately before its natural expiry) and to fetch the most up-to-date user profile properties.
 
 ### 6. Audience Verification (`aud` Check)
-In both `/introspect` and `/refresh` endpoints, we verify:
+In both `/introspect` and `/token` (for refresh grant) endpoints, we verify:
 ```javascript
 if (decoded.aud !== client.client_id) { ... }
 ```
 This ensures that Client A cannot introspect, read, or refresh tokens that belong to Client B. This prevents cross-client token leakage from becoming a security loophole.
 
-
-
+### 7. Redis-Backed API Rate Limiting & Trust Proxy
+- **Brute Force & DDoS Mitigation**: Sensitive routes like `/api/auth/login` and `/api/oidc/token` are protected using IP-based limits stored in Redis.
+- **Why Redis for Rate Limiting?** Standard in-memory stores reset on every hot-reload or server restart, resetting the limit count. Redis ensures rate limits are persistently tracked and shared across multiple server instances.
+- **The Proxy Challenge**: When running behind a reverse proxy (like Nginx, AWS ALB, or Cloudflare), the server sees the proxy's internal IP. To avoid blocking all public traffic when a single user hits the rate limit, `app.set('trust proxy', 1)` must be configured in Express so it parses the true client IP from the `X-Forwarded-For` header.

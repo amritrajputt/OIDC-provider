@@ -11,6 +11,8 @@ import demoClientRouter from "./routes/demoClient.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { rotateSigningKeys } from "./utils/rotateKeys.js";
+import { authRateLimiter, generalRateLimiter } from "../common/middleware/rateLimitter.middleware.js";
+
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +32,7 @@ app.use(cors({
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(generalRateLimiter);
 
 // Initialize Redis Store for express-session
 const redisStore = new RedisStore({
@@ -51,7 +54,7 @@ app.use(session({
 }));
 
 
-app.use("/api/auth", authRouter);
+app.use("/api/auth",authRateLimiter, authRouter);
 app.use("/api/clients", clientRouter);
 app.use("/api/oidc", oidcRouter);
 app.use('/', discoveryRoutes);
