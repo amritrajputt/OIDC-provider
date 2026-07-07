@@ -1,5 +1,6 @@
 // @ts-nocheck
 import {Pool} from 'pg';
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
@@ -27,6 +28,37 @@ const pool = new Pool({
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
 });
+
+
+
+const seedSigningKeys = async () => {
+    try {
+        const keyCheck = await pool.query("SELECT COUNT(*) FROM signing_keys");
+        if (parseInt(keyCheck.rows[0].count) === 0) {
+            console.log("Seeding initial key pair from environment...");
+            
+            const privateKey = process.env.PRIVATE_KEY;
+            const kid = process.env.KEY_ID ;
+            
+            if (privateKey) {
+                // Deriving the public key from the private key
+                const publicKeyObj = crypto.createPublicKey(privateKey);
+                const publicKey = publicKeyObj.export({ type: 'spki', format: 'pem' }) as string;
+                
+                await pool.query(
+                    "INSERT INTO signing_keys (kid, private_key, public_key, status) VALUES ($1, $2, $3, $4)",
+                    [kid, privateKey, publicKey, 'active']
+                );
+                console.log("Initial signing key seeded successfully!");
+            } else {
+                console.warn("No PRIVATE_KEY found in .env to seed.");
+            }
+        }
+    } catch (err) {
+        console.error("Failed to seed initial signing keys:", err);
+    }
+};
+
 
 const seedDatabase = async () => {
     try {
@@ -90,6 +122,7 @@ const initializeDatabase = async () => {
             
             console.log('Database schema initialized successfully!');
         }
+        await seedSigningKeys();
         
         await seedDatabase();
     } catch (err) {

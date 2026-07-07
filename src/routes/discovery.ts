@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { Jwt } from "../utils/utils.jwt.js";
+import crypto from "crypto";
+import pool from "../model/db.js";
 
 const discoveryRouter = Router();
 
@@ -18,21 +19,26 @@ discoveryRouter.get("/.well-known/openid-configuration", (req, res) => {
     });
 });
 
-discoveryRouter.get(["/jwks.json", "/.well-known/jwks.json"], (req, res) => {
+discoveryRouter.get(["/jwks.json", "/.well-known/jwks.json"], async(req, res) => {
     try {
-        const jwk = Jwt.publicKey.export({ format: 'jwk' });
+        const result = await pool.query(
+            "SELECT kid, public_key FROM signing_keys WHERE status IN ('active', 'retired')"
+        );
         
-        return res.json({
-            keys: [
-                {
-                    kty: jwk.kty,
-                    use: 'sig',
-                    alg: 'RS256',
-                    n: jwk.n,
-                    e: jwk.e
-                }
-            ]
+        const jwks = result.rows.map(row => {
+            const publicKeyObj = crypto.createPublicKey (row.public_key);
+            const jwk = publicKeyObj.export({ format: 'jwk' });
+            return {
+                kty: jwk.kty,
+                use: 'sig',
+                alg: 'RS256',
+                kid: row.kid, 
+                n: jwk.n,
+                e: jwk.e
+            };
         });
+            
+        return res.json({keys: jwks})
     } catch (error) {
         console.error("JWKS Export Error:", error);
         return res.status(500).json({ error: "Failed to export JWK" });

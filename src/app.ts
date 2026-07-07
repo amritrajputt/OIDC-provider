@@ -8,6 +8,8 @@ import discoveryRoutes from './routes/discovery.js';
 import demoClientRouter from "./routes/demoClient.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import { rotateSigningKeys } from "./utils/rotateKeys.js";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,5 +71,16 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
         error: err.error || []
     });
 });
-
+app.post("/api/admin/rotate-keys", async (req, res, next) => {
+    try {
+        const newKid = await rotateSigningKeys();
+        res.status(200).json({
+            success: true,
+            message: "Keys rotated successfully!",
+            active_kid: newKid
+        });
+    } catch (error) {
+        next(error);
+    }
+});
 export default app;

@@ -133,21 +133,21 @@ const tokenService = async (req: Request<any, any, TokenRequestBody>, res: Respo
     const user = userRequest.rows[0]
 
 
-    const accessToken = Jwt.signAccessToken({
+    const accessToken =await Jwt.signAccessToken({
         sub: user.id, // sub tells about who is the user who has logged in to your application gives userid
         aud: clientRequest.rows[0].client_id, //client who has requested the token gives client  
         iss: process.env.ISSUER_URL || "http://localhost:3000", //issuer who has issued the token 
 
     }, "15m")
 
-    const refreshToken = Jwt.signRefreshToken({
+    const refreshToken =await Jwt.signRefreshToken({
         sub: user.id,
         aud: clientRequest.rows[0].client_id,
         iss: process.env.ISSUER_URL || "http://localhost:3000", //issuer who has issued the token 
         jti: uuidv4()
     }, "7d")
 
-    const idToken = Jwt.signIdToken({
+    const idToken =await Jwt.signIdToken({
         sub: user.id,
         name: user.name,
         email: user.email,
@@ -174,7 +174,7 @@ const userInfoService = async (req:Request, res:Response) => {
     const token = authHeader.replace('Bearer ', '');
     let decoded: any;
     try {
-        decoded = Jwt.verifyAccessToken(token);
+        decoded = await Jwt.verifyAccessToken(token);
     } catch (error) {
         return res.status(401).json({ error: 'invalid_token', message: error.message });
     }
@@ -252,21 +252,21 @@ const tokenIntrospectionService = async (req:Request, res:Response) => {
     try {
         if (token_type_hint === 'refresh_token') {
             try {
-                decoded = Jwt.verifyRefreshToken(token);
+                decoded = await Jwt.verifyRefreshToken(token);
                 isActive = true;
-                tokenType = 'refresh_token';
+                tokenType =  'refresh_token';
             } catch (err) {
-                decoded = Jwt.verifyAccessToken(token);
+                decoded = await Jwt.verifyAccessToken(token);
                 isActive = true;
                 tokenType = 'access_token';
             }
         } else {
             try {
-                decoded = Jwt.verifyAccessToken(token);
+                decoded = await Jwt.verifyAccessToken(token);
                 isActive = true;
                 tokenType = 'access_token';
             } catch (err) {
-                decoded = Jwt.verifyRefreshToken(token);
+                decoded = await Jwt.verifyRefreshToken(token);
                 isActive = true;
                 tokenType = 'refresh_token';
             }
@@ -315,7 +315,7 @@ const refreshTokenService = async (req:Request, res:Response) => {
 
     let decoded: any;
     try {
-        decoded = Jwt.verifyRefreshToken(refresh_token);
+        decoded = await Jwt.verifyRefreshToken(refresh_token);
     } catch (error) {
         throw ApiError.unauthorized("invalid_grant: Invalid or expired refresh token");
     }
@@ -330,20 +330,20 @@ const refreshTokenService = async (req:Request, res:Response) => {
     }
     const user = userResult.rows[0];
 
-    const accessToken = Jwt.signAccessToken({
+    const accessToken =await Jwt.signAccessToken({
         sub: user.id,
         aud: client.client_id,
         iss: process.env.ISSUER_URL || "http://localhost:3000",
     }, "15m");
 
-    const newRefreshToken = Jwt.signRefreshToken({
+    const newRefreshToken = await Jwt.signRefreshToken({
         sub: user.id,
         aud: client.client_id,
         iss: process.env.ISSUER_URL || "http://localhost:3000",
         jti: uuidv4()
     }, "7d");
 
-    const idToken = Jwt.signIdToken({
+    const idToken = await Jwt.signIdToken({
         sub: user.id,
         name: user.name,
         email: user.email,
