@@ -174,12 +174,21 @@ const exchangeAuthCodeService = async (params: AuthCodeParams) => {
         iss: process.env.ISSUER_URL || "http://localhost:3000",
     }, "15m");
 
+    const refreshJti = uuidv4();
     const refreshToken = await Jwt.signRefreshToken({
         sub: user.id,
         aud: client.client_id,
         iss: process.env.ISSUER_URL || "http://localhost:3000",
-        jti: uuidv4()
+        jti: refreshJti
     }, "7d");
+
+    const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await pool.query(
+        "INSERT INTO refresh_tokens (jti, user_id, client_id, expires_at, parent_jti) VALUES ($1, $2, $3, $4, NULL)",
+        [refreshJti, user.id, client.id, refreshExpiresAt]
+    );
+
 
     const idToken = await Jwt.signIdToken({
         sub: user.id,
@@ -221,23 +230,49 @@ const exchangeRefreshTokenService = async (params: RefreshTokenParams) => {
         throw ApiError.badRequest("invalid_grant: Client mismatch");
     }
 
+    const tokenQuery = await pool.query(
+        "SELECT * FROM refresh_tokens WHERE jti = $1",
+        [decoded.jti]
+    );
+    if (tokenQuery.rows.length === 0) {
+        throw ApiError.unauthorized("invalid_grant: Token not found or untracked");
+    }
+    const tokenRecord = tokenQuery.rows[0];
+    if (tokenRecord.is_revoked) {
+        console.warn(`SECURITY ALERT: Replay attack detected for user ${decoded.sub}. Refresh token ${decoded.jti} was reused!`);
+
+        await pool.query(
+            "UPDATE refresh_tokens SET is_revoked = TRUE WHERE user_id = $1 AND client_id = $2",
+            [decoded.sub, client.id]
+        );
+
+        throw ApiError.unauthorized("invalid_grant: Refresh token has already been used. Session compromised.");
+    }
+
+    if (tokenRecord.expires_at < new Date()) {
+        throw ApiError.unauthorized("invalid_grant: Refresh token expired");
+    }
+
+
     const userResult = await pool.query('SELECT id, name, email FROM users WHERE id = $1', [decoded.sub]);
     if (userResult.rows.length === 0) {
         throw ApiError.unauthorized("invalid_grant: User not found");
     }
     const user = userResult.rows[0];
 
+    const newJti = uuidv4();
     const accessToken = await Jwt.signAccessToken({
         sub: user.id,
         aud: client.client_id,
         iss: process.env.ISSUER_URL || "http://localhost:3000",
+
     }, "15m");
 
     const newRefreshToken = await Jwt.signRefreshToken({
         sub: user.id,
         aud: client.client_id,
         iss: process.env.ISSUER_URL || "http://localhost:3000",
-        jti: uuidv4()
+        jti: newJti
     }, "7d");
 
     const idToken = await Jwt.signIdToken({
@@ -248,6 +283,25 @@ const exchangeRefreshTokenService = async (params: RefreshTokenParams) => {
         iss: process.env.ISSUER_URL || "http://localhost:3000",
     }, "15m");
 
+    const dbClient = await pool.connect();
+    try {
+        await dbClient.query('BEGIN');
+        await dbClient.query(
+            "UPDATE refresh_tokens SET is_revoked = TRUE WHERE jti = $1",
+            [decoded.jti]
+        );
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await dbClient.query(
+            "INSERT INTO refresh_tokens (jti, user_id, client_id, expires_at, parent_jti) VALUES ($1, $2, $3, $4, $5)",
+            [newJti, user.id, client.id, expiresAt, decoded.jti]
+        );
+        await dbClient.query('COMMIT');
+    } catch (dbError) {
+        await dbClient.query('ROLLBACK');
+        throw dbError;
+    } finally {
+        dbClient.release();
+    }
     return {
         access_token: accessToken,
         id_token: idToken,
@@ -352,10 +406,10 @@ const tokenIntrospectionService = async (params: IntrospectParams) => {
     }
 };
 
-export { 
-    authorizeService, 
-    exchangeAuthCodeService, 
-    exchangeRefreshTokenService, 
-    userInfoService, 
-    tokenIntrospectionService 
+export {
+    authorizeService,
+    exchangeAuthCodeService,
+    exchangeRefreshTokenService,
+    userInfoService,
+    tokenIntrospectionService
 };
