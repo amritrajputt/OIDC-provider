@@ -93,10 +93,3 @@ cd frontend
 pnpm install
 pnpm run dev
 ```
-
----
-
-## 📚 Documentation Guides
-
-- **[OIDC Integration Guide](file:///d:/oidc%20%20provider/INTEGRATION_GUIDE.md)**: How to connect React apps, Next.js (NextAuth), or Express APIs to this server.
-- **[AWS EC2 Deployment Guide](file:///d:/oidc%20%20provider/DEPLOYMENT_GUIDE.md)**: Detailed instructions to host this server live on AWS EC2 behind an Nginx proxy with Let's Encrypt SSL.
