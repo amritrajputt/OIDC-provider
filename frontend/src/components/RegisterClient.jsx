@@ -1,8 +1,5 @@
 import { useState } from 'react';
-
-const BACKEND_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:3000' 
-  : window.location.origin;
+import { clientService } from '../services/apiService';
 
 export default function RegisterClient() {
   const [appName, setAppName] = useState('');
@@ -25,17 +22,7 @@ export default function RegisterClient() {
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/clients/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ app_name: appName, redirect_uri: redirectUri }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.message || 'Failed to register client application.');
-      }
-
+      const result = await clientService.register({ appName, redirectUri });
       setSuccessData(result.data);
     } catch (err) {
       setError(err.message);
