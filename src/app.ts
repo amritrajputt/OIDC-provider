@@ -71,6 +71,18 @@ app.use("/api/auth",authRateLimiter ,authRouter);
 app.use("/api/clients", clientRouter);
 app.use("/api/oidc", oidcRouter);
 app.use('/', discoveryRoutes);
+app.post("/api/admin/rotate-keys", async (req, res, next) => {
+    try {
+        const newKid = await rotateSigningKeys();
+        res.status(200).json({
+            success: true,
+            message: "Keys rotated successfully!",
+            active_kid: newKid
+        });
+    } catch (error) {
+        next(error);
+    }
+});
 
 app.get("/health", (req: Request, res: Response) => {
     res.status(200).json({ status: "OK", message: "Server is healthy", timestamp: new Date().toISOString() });
@@ -102,16 +114,5 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
         error: err.error || []
     });
 });
-app.post("/api/admin/rotate-keys", async (req, res, next) => {
-    try {
-        const newKid = await rotateSigningKeys();
-        res.status(200).json({
-            success: true,
-            message: "Keys rotated successfully!",
-            active_kid: newKid
-        });
-    } catch (error) {
-        next(error);
-    }
-});
+
 export default app;
