@@ -23,8 +23,8 @@ const register = async (registerInput: RegisterInput) => {
         throw ApiError.badRequest('User already exists');
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await pool.query('INSERT INTO users (email, name, password) VALUES ($1, $2, $3) RETURNING *', [email, name, hashedPassword]);
-    return ApiResponse.success(201, user.rows[0], 'User registered successfully');
+    const user = await pool.query('INSERT INTO users (email, name, password) VALUES ($1, $2, $3) RETURNING user_id', [email, name, hashedPassword]);
+    return ApiResponse.success(201, { userId: user.rows[0].user_id }, 'User registered successfully');
 }
 
 const login = async (loginInput: LoginInput) => {
