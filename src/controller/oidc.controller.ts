@@ -65,7 +65,8 @@ const tokenController = async (req: Request, res: Response, next: NextFunction) 
                 clientId: client_id,
                 clientSecret: client_secret,
                 redirectUri: redirect_uri,
-                host
+                host,
+                codeVerifier: code_verifier,
             });
         } else if (grant_type === "refresh_token") {
             if (!refresh_token) {
