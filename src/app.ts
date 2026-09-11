@@ -55,7 +55,7 @@ const redisStore = new RedisStore({
 
 app.use(session({
     store: redisStore,
-    secret: process.env.SESSION_SECRET || 'fallback-secret-key-123',
+    secret: process.env.SESSION_SECRET ?? (() => { throw new Error('SESSION_SECRET is required'); })(),
     resave: false,
     saveUninitialized: false,
     cookie: {
