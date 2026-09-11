@@ -25,17 +25,28 @@ const login = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { email, password } = req.body as LoginInput;
         const response = await authService.login({ email, password });
-        req.session.userId = response.data.id;
 
-        req.session.save((err) => {
+        req.session.regenerate((err) => {
             if (err) {
-                console.error("Session save error:", err);
+                console.error("Session regenerate error:", err);
                 return res.status(500).json({
                     success: false,
-                    message: "Failed to initialize login session"
+                    message: "Failed to regenerate login session"
                 });
             }
-            return res.status(response.statusCode).json(response);
+
+            req.session.userId = response.data.id;
+
+            req.session.save((saveErr) => {
+                if (saveErr) {
+                    console.error("Session save error:", saveErr);
+                    return res.status(500).json({
+                        success: false,
+                        message: "Failed to initialize login session"
+                    });
+                }
+                return res.status(response.statusCode).json(response);
+            });
         });
     } catch (error) {
         next(error);

@@ -11,6 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { rotateSigningKeys } from "./utils/rotateKeys.js";
 import { authRateLimiter, generalRateLimiter } from "../common/middleware/rateLimitter.middleware.js";
+import { adminAuth } from "../common/middleware/adminAuth.middleware.js";
 
 
 
@@ -71,7 +72,7 @@ app.use("/api/auth",authRateLimiter ,authRouter);
 app.use("/api/clients", clientRouter);
 app.use("/api/oidc", oidcRouter);
 app.use('/', discoveryRoutes);
-app.post("/api/admin/rotate-keys", async (req, res, next) => {
+app.post("/api/admin/rotate-keys", adminAuth, async (req, res, next) => {
     try {
         const newKid = await rotateSigningKeys();
         res.status(200).json({

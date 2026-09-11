@@ -10,7 +10,6 @@ interface ClientInput {
     redirect_uri: string;
 }
 interface Client {
-    id: string;
     client_id: string;
     client_secret: string;
     app_name: string;
@@ -23,7 +22,7 @@ const registerClient = async (clientInput: ClientInput): Promise<ApiResponse> =>
         throw ApiError.badRequest("App name and redirect URI are required");
     }
     
-    const isExistingClient = await pool.query("SELECT * FROM clients WHERE app_name = $1", [app_name]);
+    const isExistingClient = await pool.query("SELECT id FROM clients WHERE app_name = $1", [app_name]);
     if (isExistingClient.rows.length > 0) {
         throw ApiError.badRequest("Client already exists");
     }
@@ -33,12 +32,11 @@ const registerClient = async (clientInput: ClientInput): Promise<ApiResponse> =>
     const hashed_secret = await bcrypt.hash(client_secret, 10);
     
     const result = await pool.query(
-        "INSERT INTO clients (client_id, client_secret, app_name, redirect_uri) VALUES ($1, $2, $3, $4) RETURNING *", 
+        "INSERT INTO clients (client_id, client_secret, app_name, redirect_uri) VALUES ($1, $2, $3, $4) RETURNING client_id, app_name, redirect_uri, created_at", 
         [client_id, hashed_secret, app_name, redirect_uri]
     );
 
-    const client:Client = {
-        id: result.rows[0].id,
+    const client: Client = {
         client_id: result.rows[0].client_id,
         client_secret: client_secret, 
         app_name: result.rows[0].app_name,
