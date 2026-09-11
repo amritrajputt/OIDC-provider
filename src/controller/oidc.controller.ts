@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import ApiError from "../../common/ApiError.js";
 import { 
     authorizeService, 
+    grantConsentService,
     exchangeAuthCodeService, 
     exchangeRefreshTokenService, 
     userInfoService, 
@@ -146,12 +147,57 @@ const revokeController = async (req: Request, res: Response, next: NextFunction)
         next(error);
     }
 };
+const consentController = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.session.userId;
+        if (!userId) {
+            throw ApiError.unauthorized("Authentication required to grant consent");
+        }
 
+        const {
+            client_id,
+            scope,
+            redirect_uri,
+            response_type,
+            state,
+            code_challenge,
+            code_challenge_method,
+            action
+        } = req.body;
+
+        const host = req.get('host') || '';
+
+        const result = await grantConsentService({
+            userId,
+            clientId: client_id as string,
+            scope: scope as string,
+            redirectUri: redirect_uri as string,
+            responseType: response_type as string,
+            state: state as string,
+            codeChallenge: code_challenge as string,
+            codeChallengeMethod: code_challenge_method as string,
+            action: action as 'allow' | 'deny',
+            host
+        });
+
+        if (req.accepts('json') && (req.headers['content-type']?.includes('application/json') || req.xhr)) {
+            return res.status(200).json({
+                success: true,
+                redirect_url: result.redirectUrl
+            });
+        }
+
+        return res.redirect(result.redirectUrl);
+    } catch (error) {
+        next(error);
+    }
+};
 
 export { 
     authorizeController, 
+    consentController,
     tokenController, 
     userInfoController, 
-    tokenIntrospectionController,
+    tokenIntrospectionController, 
     revokeController 
 };

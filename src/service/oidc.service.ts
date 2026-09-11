@@ -26,15 +26,15 @@ interface AuthorizeParams {
     responseType: string;
     scope: string;
     state: string;
-    consented: string;
+    consented?: string;
     userId: string | null | undefined;
     host: string;
-     codeChallenge?: string;      
+    codeChallenge?: string;      
     codeChallengeMethod?: string;
 }
 
 const authorizeService = async (params: AuthorizeParams) => {
-    const { clientId, redirectUri, responseType, scope, state, consented, userId, host, codeChallenge, codeChallengeMethod } = params;
+    const { clientId, redirectUri, responseType, scope, state, userId, host, codeChallenge, codeChallengeMethod } = params;
 
     const clientQuery = await pool.query("SELECT * FROM clients WHERE client_id=$1", [clientId]);
     if (clientQuery.rows.length === 0) {
@@ -57,17 +57,29 @@ const authorizeService = async (params: AuthorizeParams) => {
     }
 
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-
+    const pkceParams = `${codeChallenge ? `&code_challenge=${encodeURIComponent(codeChallenge)}` : ''}${codeChallengeMethod ? `&code_challenge_method=${encodeURIComponent(codeChallengeMethod)}` : ''}`;
 
     let sessionUserId = userId;
 
     if (!sessionUserId) {
-        const loginUrl = `${frontendUrl}/login?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${scope}&state=${state}`;
+        const loginUrl = `${frontendUrl}/login?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${encodeURIComponent(scope || '')}&state=${encodeURIComponent(state || '')}${pkceParams}`;
         return { type: 'redirect', url: loginUrl, sessionUserId: null };
     }
 
-    if (consented !== 'true') {
-        const consentUrl = `${frontendUrl}/consent?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${scope}&state=${state}&app_name=${encodeURIComponent(clientQuery.rows[0].app_name)}`;
+    // Check server-side consent in database (prevents &consented=true URL bypass)
+    const consentRes = await pool.query(
+        "SELECT scopes FROM user_consents WHERE user_id = $1 AND client_id = $2",
+        [sessionUserId, clientQuery.rows[0].id]
+    );
+
+    const requestedScopes = (scope || 'openid').split(/\s+/).filter(Boolean);
+    const grantedScopes = consentRes.rows.length > 0 
+        ? (consentRes.rows[0].scopes || '').split(/\s+/).filter(Boolean)
+        : [];
+    const hasConsented = consentRes.rows.length > 0 && requestedScopes.every((s: string) => grantedScopes.includes(s));
+
+    if (!hasConsented) {
+        const consentUrl = `${frontendUrl}/consent?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${responseType}&scope=${encodeURIComponent(scope || '')}&state=${encodeURIComponent(state || '')}&app_name=${encodeURIComponent(clientQuery.rows[0].app_name)}${pkceParams}`;
         return { type: 'redirect', url: consentUrl, sessionUserId };
     }
 
@@ -79,9 +91,70 @@ const authorizeService = async (params: AuthorizeParams) => {
         [code, sessionUserId, clientQuery.rows[0].id, expiresAt, false, codeChallenge || null, codeChallengeMethod || null]
     );
 
-    const finalUrl = `${redirectUri}?code=${code}&state=${state}`;
+    const finalUrl = `${redirectUri}?code=${code}&state=${encodeURIComponent(state || '')}`;
     return { type: 'redirect', url: finalUrl, sessionUserId };
 };
+
+interface GrantConsentParams {
+    userId: string;
+    clientId: string;
+    scope: string;
+    redirectUri: string;
+    responseType?: string;
+    state?: string;
+    codeChallenge?: string;
+    codeChallengeMethod?: string;
+    action?: 'allow' | 'deny';
+    host: string;
+}
+
+const grantConsentService = async (params: GrantConsentParams) => {
+    const { userId, clientId, scope, redirectUri, state, codeChallenge, codeChallengeMethod, action, host } = params;
+
+    const clientQuery = await pool.query("SELECT * FROM clients WHERE client_id=$1", [clientId]);
+    if (clientQuery.rows.length === 0) {
+        throw ApiError.notFound("Client not found");
+    }
+    const client = clientQuery.rows[0];
+
+    const isRedirectUriValid = isValidRedirectUri({
+        clientId: clientId || '',
+        incomingRedirectUri: redirectUri || '',
+        dbRedirectUri: client.redirect_uri,
+        host
+    });
+
+    if (!isRedirectUriValid) {
+        throw ApiError.badRequest("Invalid redirect URI");
+    }
+
+    if (action === 'deny') {
+        const deniedUrl = `${redirectUri}?error=access_denied&error_description=${encodeURIComponent("User denied consent")}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+        return { redirectUrl: deniedUrl };
+    }
+
+    // Upsert consent in database
+    const scopesToSave = scope || 'openid';
+    await pool.query(
+        `INSERT INTO user_consents (user_id, client_id, scopes, updated_at)
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id, client_id)
+         DO UPDATE SET scopes = EXCLUDED.scopes, updated_at = CURRENT_TIMESTAMP`,
+        [userId, client.id, scopesToSave]
+    );
+
+    // Generate authorization code
+    const code = uuidv4();
+    const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+    await pool.query(
+        "INSERT INTO autorization_codes (code, user_id, client_id, expires_at, is_used, code_challenge, code_challenge_method) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [code, userId, client.id, expiresAt, false, codeChallenge || null, codeChallengeMethod || null]
+    );
+
+    const redirectUrl = `${redirectUri}?code=${code}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+    return { redirectUrl };
+};
+
 interface ClientAuthParams {
     clientId?: string;
     clientSecret?: string;
@@ -475,6 +548,7 @@ const tokenIntrospectionService = async (params: IntrospectParams) => {
 
 export {
     authorizeService,
+    grantConsentService,
     exchangeAuthCodeService,
     exchangeRefreshTokenService,
     userInfoService,

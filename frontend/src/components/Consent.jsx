@@ -8,6 +8,8 @@ export default function Consent() {
   const [appName, setAppName] = useState('External Application');
   const [scopes, setScopes] = useState([]);
   const [params, setParams] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -26,13 +28,49 @@ export default function Consent() {
     const redirectUri = params.get('redirect_uri');
     const state = params.get('state') || '';
     if (redirectUri) {
-      window.location.href = `${redirectUri}?error=access_denied&error_description=User+denied+consent&state=${state}`;
+      window.location.href = `${redirectUri}?error=access_denied&error_description=User+denied+consent${state ? `&state=${encodeURIComponent(state)}` : ''}`;
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!params) return;
-    window.location.href = `${BACKEND_URL}/api/oidc/authorize?${params.toString()}&consented=true`;
+    setLoading(true);
+    setError('');
+    try {
+      const payload = {
+        client_id: params.get('client_id'),
+        scope: params.get('scope') || 'openid',
+        redirect_uri: params.get('redirect_uri'),
+        response_type: params.get('response_type') || 'code',
+        state: params.get('state') || '',
+        code_challenge: params.get('code_challenge') || undefined,
+        code_challenge_method: params.get('code_challenge_method') || undefined,
+        action: 'allow'
+      };
+
+      const response = await fetch(`${BACKEND_URL}/api/oidc/consent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Failed to submit consent');
+      }
+
+      if (data.redirect_url) {
+        window.location.href = data.redirect_url;
+      } else {
+        window.location.href = `${BACKEND_URL}/api/oidc/authorize?${params.toString()}`;
+      }
+    } catch (err) {
+      setError(err.message || 'An error occurred while granting consent');
+      setLoading(false);
+    }
   };
 
   const getScopeDescription = (scopeName) => {
@@ -72,6 +110,12 @@ export default function Consent() {
               </p>
             </div>
 
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
             
             <div className="bg-neutral-950/80 border border-neutral-850 rounded-2xl p-5 space-y-4">
               <span className="text-xs uppercase font-semibold text-neutral-500 tracking-wider">Permissions Requested</span>
@@ -102,16 +146,22 @@ export default function Consent() {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="flex-1 bg-transparent hover:bg-neutral-850 border border-neutral-800 text-neutral-300 font-semibold py-3 px-4 rounded-xl transition outline-none focus:ring-2 focus:ring-white/50 cursor-pointer"
+                disabled={loading}
+                className="flex-1 bg-transparent hover:bg-neutral-850 border border-neutral-800 text-neutral-300 font-semibold py-3 px-4 rounded-xl transition outline-none focus:ring-2 focus:ring-white/50 cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleContinue}
-                className="flex-1 bg-white hover:bg-neutral-200 text-black font-semibold py-3 px-4 rounded-xl transition outline-none focus:ring-2 focus:ring-white/50 cursor-pointer"
+                disabled={loading}
+                className="flex-1 bg-white hover:bg-neutral-200 text-black font-semibold py-3 px-4 rounded-xl transition outline-none focus:ring-2 focus:ring-white/50 cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-2"
               >
-                Continue
+                {loading ? (
+                  <span>Processing...</span>
+                ) : (
+                  <span>Continue</span>
+                )}
               </button>
             </div>
           </div>

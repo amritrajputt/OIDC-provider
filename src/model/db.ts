@@ -112,10 +112,24 @@ const initializeDatabase = async () => {
 
             const signingKeysSql = fs.readFileSync(path.join(__dirname, '../../db/migrations/004_create_signing_keys.sql'), 'utf8');
             const refreshTokensSql = fs.readFileSync(path.join(__dirname, '../../db/migrations/005_create_refresh_token.sql'), 'utf8');
+            const userConsentsSql = fs.readFileSync(path.join(__dirname, '../../db/migrations/006_create_user_consents.sql'), 'utf8');
             await pool.query(signingKeysSql);
             await pool.query(refreshTokensSql);
+            await pool.query(userConsentsSql);
             
             console.log('Database schema initialized successfully!');
+        } else {
+            const consentTableCheck = await pool.query(`
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'user_consents'
+                );
+            `);
+            if (!consentTableCheck.rows[0].exists) {
+                const userConsentsSql = fs.readFileSync(path.join(__dirname, '../../db/migrations/006_create_user_consents.sql'), 'utf8');
+                await pool.query(userConsentsSql);
+                console.log('Migration 006 (user_consents) applied successfully!');
+            }
         }
         await seedSigningKeys();
         
