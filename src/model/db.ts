@@ -109,6 +109,11 @@ const initializeDatabase = async () => {
             await pool.query(usersSql);
             await pool.query(clientsSql);
             await pool.query(authCodesSql);
+
+            const signingKeysSql = fs.readFileSync(path.join(__dirname, '../../db/migrations/004_create_signing_keys.sql'), 'utf8');
+            const refreshTokensSql = fs.readFileSync(path.join(__dirname, '../../db/migrations/005_create_refresh_token.sql'), 'utf8');
+            await pool.query(signingKeysSql);
+            await pool.query(refreshTokensSql);
             
             console.log('Database schema initialized successfully!');
         }
