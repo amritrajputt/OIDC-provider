@@ -20,14 +20,14 @@ const authorizeController = async (req: Request, res: Response, next: NextFuncti
         const result = await authorizeService({
             clientId: client_id as string,
             redirectUri: redirect_uri as string,
-            responseType: response_type as string,
-            scope: scope as string,
-            state: state as string,
-            consented: consented as string,
+            responseType: response_type as string, // ky chahiye code/access token
+            scope: scope as string, // permission ki boundary define karta hai.
+            state: state as string,// prevent from csrf 
+            consented: consented as string, //consent do data share krne k liye 
             userId,
             host,
-            codeChallenge: code_challenge as string,
-            codeChallengeMethod: code_challenge_method as string
+            codeChallenge: code_challenge as string, // PKCE security extension
+            codeChallengeMethod: code_challenge_method as string // mathemetical algo like sha256 / plain kaise hua h
         });
 
         if (result.type === 'redirect') {
