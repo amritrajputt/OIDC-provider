@@ -468,6 +468,9 @@ const revokeTokenService = async (params: RevokeParams) => {
             [decoded.jti]
         );
     } catch (err) {
+        if(err instanceof ApiError){
+            throw err;
+        }
         console.warn("Revocation requested for invalid/expired token. Skipping.");
     }
 };
